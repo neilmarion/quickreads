@@ -1,0 +1,533 @@
+var $host = $config["host"];
+var $downloadHost = $config["downloadHost"];
+var $album_id = $config["album_id"];
+var $read = JSON.parse(localStorage.getItem("read"));
+var $notRead = [];
+var $loading = $('.spinner').hide();
+var $mac_address = '';
+var $mode = "offline";
+var $photoCache = [];
+var $photoCacheIndex = JSON.parse(localStorage.getItem("photoCacheIndex"));
+var $shareMessage = $messages["share"];
+var $autoDLMode = false;
+var $downloadFileFolderNativeURL = "";
+var $textCache;
+var $text = "";
+
+document.title = $config["name"];
+$("#download-complete-message").html($messages["download_complete_message"]);
+
+var app = {
+    initialize: function() {
+        this.bindEvents();
+    },
+    bindEvents: function() {
+        document.addEventListener('deviceready', this.onDeviceReady, false);
+    },
+    onDeviceReady: function() {
+        initialize();
+        app.receivedEvent('deviceready');
+    },
+    receivedEvent: function(id) {
+        var parentElement = document.getElementById(id);
+        var listeningElement = parentElement.querySelector('.listening');
+        var receivedElement = parentElement.querySelector('.received');
+
+        listeningElement.setAttribute('style', 'display:none;');
+        receivedElement.setAttribute('style', 'display:block;');
+
+        console.log('Received Event: ' + id);
+    }
+};
+
+$(document).ajaxStart(function () {
+  $loading.css("margin-top", $(document).height()/2);
+  $loading.show();
+}).ajaxStop(function () {
+  $loading.hide();
+});
+
+var downloadPhoto = (function(shareMethod) {
+  showSpinnerOnShare();
+  photo = JSON.parse(localStorage.getItem("last"));
+  file_path = photo["current"]["photo"];
+  $textCache[photo["current"]["photo"].substr(photo["current"]["photo"].lastIndexOf('/') + 1) + ".png"] = photo["current"]["text"];
+  writeToFile( JSON.stringify($textCache), $config["textCacheFilePath"] );
+  DownloadFile( $downloadHost + photo["current"]["photo"], $config["download_folder"], file_path.substr(file_path.lastIndexOf('/') + 1), shareMethod);
+});
+
+var showSpinnerOnShare = (function () {
+  $loading.css("margin-top", "0px");
+  $loading.show();
+});
+
+var share = (function() {
+  showSpinnerOnShare();
+  downloadPhoto("general");
+});
+
+var shareViaFB = (function() {
+  showSpinnerOnShare();
+  downloadPhoto("facebook");
+});
+
+var shareViaTwitter = (function() {
+  showSpinnerOnShare();
+  downloadPhoto("twitter");
+});
+
+var next = (function() {
+  $(".photo").hide('slide', {direction: 'left'}, 100);
+  $.ajax({
+    type: "GET",
+    url: $host + '/v1/show?id=' + JSON.parse($("#current").attr('value'))["next"]["id"] + "&device=" + $mac_address,
+    xhrFields: {withCredentials: true},
+    dataType: "json",
+    success: function (data) {
+      console.log(data);
+      $(".photo").html("<img src='" + $downloadHost + data["current"]["photo"] + "'>");
+      $(".photo-prev").html("<img src='" + $downloadHost + data["previous"]["photo"] + "'>");
+      $(".photo-next").html("<img src='" + $downloadHost + data["next"]["photo"] + "'>");
+      $(".photo").show('slide', {direction: 'right'}, 100);
+      $("#current").attr('value', JSON.stringify(data))
+      localStorage.setItem("last", $("#current").attr('value'));
+      hideRibbon();
+      isUnread(data["current"]["id"]);
+      $mode = "online";
+      setText(data["current"]["text"]);
+      autoDownload( data["current"]["photo"], data["current"]["text"] );
+    }, error: function() {
+      showPhotoFromPhotoCache("next");
+      $(".random-btn").show();
+      $(".new-btn").hide();
+      hideRibbon();
+      $mode = "offline";
+    }
+  });
+});
+
+var storeToPhotoCache = ( function( photoName ) {
+  $photoCache.push( photoName );
+  $photoCache = $.unique( $photoCache );
+});
+
+var hideRibbon = (function () {
+  $(".ribbon-wrapper-green").hide();
+});
+
+var showRibbon = (function () {
+  $(".ribbon-wrapper-green").show('slow', function(){});
+});
+
+var getNew = (function() {
+  $(".photo").hide('slide', {direction: 'left'}, 100);
+  $.ajax({
+    type: "GET",
+    url: $host + '/v1/show?id=' + $notRead[0] + "&device=" + $mac_address,
+    xhrFields: {withCredentials: true},
+    dataType: "json",
+    success: function (data) {
+      console.log(data);
+      $(".photo").html("<img src='" + $downloadHost + data["current"]["photo"] + "'>");
+      $(".photo-prev").html("<img src='" + $downloadHost + data["previous"]["photo"] + "'>");
+      $(".photo-next").html("<img src='" + $downloadHost + data["next"]["photo"] + "'>");
+      $(".photo").show('slide', {direction: 'right'}, 100);
+
+      hideRibbon();
+
+      $("#current").attr('value', JSON.stringify(data))
+      localStorage.setItem("last", $("#current").attr('value'));
+
+      $read.push($notRead[0]);
+      $notRead.splice(0, 1); // remove from 'notRead' array and
+      localStorage.setItem("read", JSON.stringify($read)); // place it in the 'read' array
+
+      if ( $notRead.length <= 0 ) {
+        $(".random-btn").show();
+        $(".new-btn").hide();
+      } else {
+        updateNewBtnCount();
+      }
+
+      showRibbon();
+      $mode = "online";
+      setText(data["current"]["text"]);
+      autoDownload( data["current"]["photo"], data["current"]["text"] );
+    }, error: function() {
+      showPhotoFromPhotoCache( "random" );
+      $(".random-btn").show();
+      $(".new-btn").hide();
+      hideRibbon();
+      $mode = "offline";
+    }
+  });
+});
+
+var isUnread = ( function( id ) {
+  i = $notRead.indexOf(id);
+  if (i > -1) {
+      $read.push($notRead[i]);
+      localStorage.setItem("read", JSON.stringify($read)); // place it in the 'read' array
+      $notRead.splice(i, 1);
+
+      if ( $notRead.length <= 0 ) {
+        $(".random-btn").show();
+        $(".new-btn").hide();
+      }
+
+      showRibbon();
+      updateNewBtnCount();
+  }
+});
+
+var prev = (function() {
+  $(".photo").hide('slide', {direction: 'right'}, 100);
+  $.ajax({
+    type: "GET",
+    url: $host + '/v1/show?id=' + JSON.parse($("#current").attr('value'))["previous"]["id"] + "&device=" + $mac_address,
+    xhrFields: {withCredentials: true},
+    dataType: "json",
+    success: function (data) {
+      console.log(data);
+      $(".photo").html("<img src='" + $downloadHost + data["current"]["photo"] + "'>");
+      $(".photo-prev").html("<img src='" + $downloadHost + data["previous"]["photo"] + "'>");
+      $(".photo-next").html("<img src='" + $downloadHost + data["next"]["photo"] + "'>");
+      $(".photo").show('slide', {direction: 'left'}, 100);
+      $("#current").attr('value', JSON.stringify(data))
+      localStorage.setItem("last", $("#current").attr('value'));
+      hideRibbon();
+      isUnread(data["current"]["id"]);
+      $mode = "online";
+      setText(data["current"]["text"]);
+      autoDownload( data["current"]["photo"], data["current"]["text"] );
+    }, error: function() {
+      showPhotoFromPhotoCache("prev");
+      $(".random-btn").show();
+      $(".new-btn").hide();
+      hideRibbon();
+      $mode = "offline";
+    }
+  });
+});
+
+var random = (function() {
+  $(".photo").hide('slide', {direction: 'left'}, 100);
+  $.ajax({
+    type: "GET",
+    url: $host + "/v1/show?album_id=" + $album_id + "&random=true" + "&device=" + $mac_address,
+    xhrFields: {withCredentials: true},
+    dataType: "json",
+    success: function (data) {
+      console.log(data);
+      $(".photo").html("<img src='" + $downloadHost + data["current"]["photo"] + "'>");
+      $(".photo-prev").html("<img src='" + $downloadHost + data["previous"]["photo"] + "'>");
+      $(".photo-next").html("<img src='" + $downloadHost + data["next"]["photo"] + "'>");
+      $(".photo").show('slide', {direction: 'right'}, 100);
+      $("#current").attr('value', JSON.stringify(data))
+      localStorage.setItem("last", $("#current").attr('value'));
+      hideRibbon();
+      $mode = "online";
+      setText(data["current"]["text"]);
+      autoDownload( data["current"]["photo"], data["current"]["text"] );
+    }, error: function() {
+      showPhotoFromPhotoCache("random");
+      hideRibbon();
+      $mode = "offline";
+    }
+  });
+});
+
+var getMonth = (function() {
+  $.ajax({
+    type: "GET",
+    url: $host + "/v1/month",
+    xhrFields: {withCredentials: true},
+    dataType: "json",
+    success: function (data) {
+      if ( localStorage.getItem("month") != data ) {
+        localStorage.setItem("month", data);
+        localStorage.setItem("read", "[]");
+      }
+
+      $read = JSON.parse(localStorage.getItem("read"));
+      getNewIds();
+    }, error: function() {
+      errorPopup();
+    }
+  });
+});
+
+var getNewIds = (function() {
+  $.ajax({
+    type: "GET",
+    url: $host + "/v1/new_ids?album_id=" + $album_id,
+    xhrFields: {withCredentials: true},
+    dataType: "json",
+    success: function (data) {
+      $notRead = getNotReadIds(data);
+      if ( $notRead.length > 0 ) {
+        $(".random-btn").hide();
+        $(".new-btn").show();
+        $(".new-btn").append(" (" + $notRead.length + ")");
+      }
+    }, error: function() {
+      errorPopup();
+    }
+  });
+});
+
+var updateNewBtnCount = (function() {
+  $(".new-btn").html("New (" + $notRead.length + ")");
+});
+
+var getNotReadIds = (function(data) {
+  notRead = [];
+  $.each(data, function(index, value) {
+    i = $read.indexOf(value);
+    if (i <= -1) {
+      notRead.push(value);
+    }
+  });
+  return notRead;
+});
+
+$("body").on("swiperight", prev);
+$("body").on("swipeleft", next);
+
+var initialize = (function() {
+  document.title = $config["name"];
+  if ( localStorage.getItem("last") == null ) {
+    url = $host + "/v1/show?album_id=" + $album_id + "&device=" + $mac_address;
+  } else {
+    val = JSON.parse(localStorage.getItem("last"));
+    url = $host + '/v1/show?id=' + val["current"]["id"];
+  }
+
+  if ( localStorage.getItem( "photoCacheIndex" ) == null ) {
+    localStorage.setItem( "photoCacheIndex", "0" );
+    $photoCacheIndex = JSON.parse(localStorage.getItem( "photoCacheIndex" ));
+  }
+
+  $("#current").attr('value', localStorage.getItem("last"))
+
+  getMacAddress();
+
+  if ( localStorage.getItem( "autoDLMode" ) == null ) {
+    localStorage.setItem( "autoDLMode", false );
+    $autoDLMode = JSON.parse( localStorage.getItem( "autoDLMode" ) );
+  }
+
+  if( $autoDLMode ) {
+    $("#auto-dl").addClass("on");
+  } else {
+    $("#auto-dl").addClass("off");
+  }
+
+
+  $.ajax({
+    type: "GET",
+    url: url,
+    xhrFields: {withCredentials: true},
+    dataType: "json",
+    success: function (data) {
+      console.log(data);
+      getMonth();
+      $(".photo").html("<img src='" + $downloadHost + data["current"]["photo"] + "'>");
+      $("#current").attr('value', JSON.stringify(data))
+      isUnread(data["current"]["id"]);
+      $mode = "online";
+      setText(data["current"]["text"]);
+      showInitialMessage($messages["initial_message"]);
+      createDirectory( $config["download_folder"] );
+      localStorage.setItem("last", $("#current").attr('value'));
+    }, error: function() {
+      $(".random-btn").show();
+      $(".new-btn").hide();
+      hideRibbon();
+      $mode = "offline";
+      createDirectory( $config["download_folder"] );
+    }
+  });
+
+});
+
+var errorPopup = (function(){
+  $("#download-error").popup('open', {transition: "pop"});
+});
+
+var getMacAddress = (function() {
+  window.MacAddress.getMacAddress(
+    function(macAddress) { $mac_address = macAddress }, function(fail) { }
+  );
+});
+
+var showPhotoFromPhotoCache = ( function(direction) {
+
+  switch ( direction ) {
+    case "next":
+      $photoCacheIndex = $photoCacheIndex + 1;
+      if ( $photoCacheIndex == $photoCache.length ) {
+        $photoCacheIndex = 0;
+      }
+
+      $(".photo").show('slide', {direction: 'right'}, 100);
+      break;
+    case "prev":
+      $photoCacheIndex = $photoCacheIndex - 1;
+      if ( $photoCacheIndex == -1 ) {
+        $photoCacheIndex = $photoCache.length - 1;
+      }
+
+      $(".photo").show('slide', {direction: 'left'}, 100);
+      break;
+    default:
+      $photoCacheIndex = Math.floor(( Math.random() * $photoCache.length ));
+      $(".photo").show('slide', {direction: 'right'}, 100);
+  }
+
+  $(".photo").html("<img src='" + $downloadFileFolderNativeURL + $photoCache[ $photoCacheIndex ] + "'>");
+  $("#text div").html("<p>" + $textCache[ $photoCache[ $photoCacheIndex ] ] + "</p>");
+});
+
+var toggleAutoDL = ( function() {
+  if( $autoDLMode ) {
+    $autoDLMode = false;
+    $("#auto-dl").addClass("off");
+    $("#auto-dl").removeClass("on");
+    $("#auto-download-off").popup('open', {transition: "pop"});
+    localStorage.setItem( "autoDLMode", false )
+  } else {
+    $autoDLMode = true;
+    autoDownload( JSON.parse( localStorage.getItem("last") )["current"]["photo"], JSON.parse( localStorage.getItem("last") )["current"]["text"] );
+    $("#auto-dl").addClass("on");
+    $("#auto-dl").removeClass("off");
+
+    $("#auto-download-on div").html($messages["auto_download_on_message"]);
+    $("#auto-download-on").popup('open', {transition: "pop"});
+    localStorage.setItem( "autoDLMode", true )
+  }
+});
+
+var showText = ( function() {
+  $("#text").popup('open', {transition: "pop"});
+});
+
+var autoDownload = ( function( photo_url, photo_text ) {
+  if( $autoDLMode ) {
+    $textCache[photo_url.substr(photo_url.lastIndexOf('/') + 1) + ".png"] = photo_text;
+    DownloadFile( $downloadHost + photo_url, $config["download_folder"], photo_url.substr(photo_url.lastIndexOf('/') + 1), null);
+    writeToFile( JSON.stringify($textCache), $config["textCacheFilePath"] );
+  }
+});
+
+var showInitialMessage = ( function( text ) {
+  $("#initial-message div").html( text );
+  $("#initial-message").popup('open', {transition: "pop"});
+});
+
+function getDownloadedPhotos( folderName ) {
+  window.requestFileSystem(LocalFileSystem.PERSISTENT, 0, fileSystemSuccess, fail);
+
+  function fileSystemSuccess(fileSystem) {
+    var directoryEntry = fileSystem.root;
+    fp = fileSystem.root.nativeURL + folderName + "/";
+    $downloadFileFolderNativeURL = fp;
+    window.resolveLocalFileSystemURL(fp, resolveSuccess, resolveFail);
+  }
+
+  function resolveSuccess (directoryEntry) {
+    var directoryReader = directoryEntry.createReader();
+    directoryReader.readEntries(success, fail);
+  }
+
+  function resolveFail(error) {
+    errorPopup();
+  }
+
+  function success( entries ) {
+    var i;
+
+    readFile($config["textCacheFilePath"], getText);
+
+    for (i=0; i<entries.length; i++) {
+      $photoCache.push( entries[i].name );
+    }
+
+    if( $mode == "offline" ) {
+      showPhotoFromPhotoCache( "random" );
+    }
+  }
+
+  function fail(error) {
+    errorPopup();
+  }
+}
+
+$(".photo").click( function() {
+  showText();
+});
+
+var setText = ( function( text ) {
+  $("#text div").html("<p>" + text.replace(/(?:\r\n|\r|\n)/g, '<br />') + "</p>");
+});
+
+function writeToFile( text, filePath ) {
+  window.requestFileSystem(LocalFileSystem.PERSISTENT, 0, fileSystemSuccess, fail);
+
+  function fileSystemSuccess(fileSystem) {
+    var directoryEntry = fileSystem.root;
+    fileSystem.root.getFile(filePath, {create: true}, success, fail);
+  }
+
+  function success( entry ) {
+    entry.createWriter(gotFileWriter, fail);
+  }
+  function gotFileWriter(writer) {
+    writer.onwrite = function(evt) {
+      console.log("write success");
+    };
+    writer.write(text);
+  }
+  function fail(error) {
+    errorPopup();
+  }
+}
+
+
+function readFile( filePath,  getText ) {
+  window.requestFileSystem(LocalFileSystem.PERSISTENT, 0, fileSystemSuccess, fail);
+
+  function fileSystemSuccess(fileSystem) {
+    var directoryEntry = fileSystem.root;
+    fileSystem.root.getFile(filePath, {create: true}, success, fail);
+  }
+
+  function success( entry ) {
+    entry.file(gotFile, fail);
+  }
+
+  function gotFile(file) {
+    readAsText(file);
+  }
+
+  function readAsText(file) {
+    var reader = new FileReader();
+    reader.onloadend = function(evt) {
+      if(evt.target.result == "") {
+        writeToFile( "{}", $config["textCacheFilePath"] )
+        $textCache = {};
+      } else {
+        getText( evt.target.result );
+      }
+    };
+    reader.readAsText(file);
+  }
+
+  function fail(error) {
+    errorPopup();
+  }
+}
+
+function getText( text ) {
+  $textCache = JSON.parse( text );
+}

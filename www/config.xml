@@ -24,7 +24,7 @@
         <param name="android-package" value="com.plugin.gcm.PushPlugin" />
     </feature>
     <feature name="Device">
-        <param name="android-package" value="org.apache.cordova.Device" />
+        <param name="android-package" value="org.apache.cordova.device.Device" />
     </feature>
     <plugin name="PushPlugin" value="com.plugin.gcm.PushPlugin" />
     <preference name="permissions" value="none" />
