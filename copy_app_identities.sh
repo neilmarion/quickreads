@@ -1,4 +1,4 @@
-APP="quickreads"
+APP="humansofnewyork"
 
 mkdir platforms/android/src/com/neilmarion/$APP
 cp -r app_identities/$APP/res platforms/android/

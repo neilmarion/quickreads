@@ -9,5 +9,6 @@ $conf = {
   small_photo: "small_photo",
   big_photo: "photo",
   show_text: true,
-  sender_id: "729983657507"
+  sender_id: "729983657507",
+  with_ads: true
 }
