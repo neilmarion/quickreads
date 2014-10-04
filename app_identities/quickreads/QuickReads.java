@@ -17,12 +17,12 @@
        under the License.
  */
 
-package com.neilmarion.humansofnewyork;
+package com.neilmarion.quickreads;
 
 import android.os.Bundle;
 import org.apache.cordova.*;
 
-public class HumansOfNewYork extends CordovaActivity 
+public class QuickReads extends CordovaActivity 
 {
     @Override
     public void onCreate(Bundle savedInstanceState)

@@ -1,11 +1,12 @@
-APP="humansofnewyork"
+APP="quickreads"
+JAVA="QuickReads"
 
 mkdir platforms/android/src/com/neilmarion/$APP
 cp -r app_identities/$APP/res platforms/android/
 cp app_identities/$APP/config.xml www/
 cp app_identities/$APP/AndroidManifest.xml platforms/android/
 cp app_identities/$APP/build.xml platforms/android/
-cp app_identities/$APP/HumansOfNewYork.java platforms/android/src/com/neilmarion/$APP
+cp app_identities/$APP/$JAVA.java platforms/android/src/com/neilmarion/$APP
 cp app_identities/$APP/config.js www/js/
 cp app_identities/$APP/messages.js www/js/
 cp app_identities/$APP/icon.png www/
