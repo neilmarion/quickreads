@@ -2,13 +2,13 @@ var AppRatePreferences;
 
 AppRatePreferences = {
   useLanguage: "en",
-  displayAppName: "Humans of New York",
+  displayAppName: "Quick Reads",
   promptAtLaunch: true,
   promptAgainForEachNewVersion: true,
   daysUntilPrompt: 1,
   usesUntilPrompt: 3,
   appStoreID: {
-    android: "com.neilmarion.humansofnewyork",
+    android: "com.neilmarion.quickreads",
   }
 };
 
